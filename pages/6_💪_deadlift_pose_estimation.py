@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import streamlit as st
+from streamlit_webrtc import webrtc_streamer, WebRtcMode, VideoTransformerBase
 
 # Initialize Mediapipe Pose
 mp_pose = mp.solutions.pose
@@ -86,20 +87,13 @@ def process_frame(image):
     
     return image
 
+# Define a custom video transformer for processing frames
+class VideoTransformer(VideoTransformerBase):
+    def transform(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        img = process_frame(img)
+        return img
+
 # Streamlit App
 st.title("AI Deadlift Pose Estimation")
-run = st.checkbox("Start Camera")
-frame_window = st.image([])
-
-cap = cv2.VideoCapture(0)
-while run:
-    ret, frame = cap.read()
-    if not ret:
-        st.write("Error accessing webcam!")
-        break
-    
-    frame = process_frame(frame)
-    frame_window.image(frame, channels="BGR")
-
-cap.release()
-st.write("Stop Camera to exit.")
+webrtc_streamer(key="example", mode=WebRtcMode.SENDRECV, video_transformer_factory=VideoTransformer)
