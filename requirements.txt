@@ -2,6 +2,7 @@ bcrypt
 google-generativeai
 streamlit
 streamlit-webrtc
+streamlit-authenticator
 mediapipe
 opencv-python
 opencv-contrib-python
