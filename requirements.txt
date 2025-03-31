@@ -12,5 +12,6 @@ pandas
 scikit-learn
 matplotlib
 pymongo
+pymongo[srv]
 python-dotenv
 requests
