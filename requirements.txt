@@ -17,3 +17,4 @@ pymongo[srv]
 python-dotenv
 requests
 pyttsx3
+requests
