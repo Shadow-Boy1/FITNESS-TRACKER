@@ -27,7 +27,6 @@ if main_menu == "Squats":
     if squat_option == "📡 Live Stream":
         st.subheader("Squats - Live Stream")
 
-        # Define a custom video processor for live stream processing
         class SquatsLiveStreamProcessor(VideoTransformerBase):
             def __init__(self):
                 self.pose = get_mediapipe_pose()
@@ -169,169 +168,26 @@ elif main_menu == "Deadlift":
     if deadlift_option == "📡 Live Stream":
         st.subheader("Deadlift - Live Stream")
 
-        # Mediapipe Pose Setup
-        mp_pose = mp.solutions.pose
-        pose = mp_pose.Pose()
-        mp_drawing = mp.solutions.drawing_utils
+        class DeadliftLiveStreamProcessor(VideoTransformerBase):
+            def __init__(self):
+                self.pose = mp.solutions.pose.Pose()
+                self.drawing = mp.solutions.drawing_utils
 
-        # Calculate angle between 3 points
-        def calculate_angle(a, b, c):
-            a, b, c = np.array(a), np.array(b), np.array(c)
-            ba, bc = a - b, c - b
-            angle = np.arccos(np.clip(np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc)), -1.0, 1.0))
-            return np.degrees(angle)
+            def recv(self, frame):
+                frame = frame.to_ndarray(format="bgr24")
+                image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = self.pose.process(image_rgb)
 
-        # Draw custom UI box
-        def draw_text_box(image, text, position, box_color, text_color):
-            x, y = position
-            (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)
-            cv2.rectangle(image, (x, y - 30), (x + w + 20, y + 10), box_color, -1)
-            cv2.putText(image, text, (x + 10, y), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
-            return image
+                if results.pose_landmarks:
+                    self.drawing.draw_landmarks(frame, results.pose_landmarks, mp.solutions.pose.POSE_CONNECTIONS)
 
-        # Streamlit Session State
-        if "correct_reps" not in st.session_state:
-            st.session_state.correct_reps = 0
-        if "incorrect_reps" not in st.session_state:
-            st.session_state.incorrect_reps = 0
-        if "stage" not in st.session_state:
-            st.session_state.stage = "up"
-        if "rep_counted" not in st.session_state:
-            st.session_state.rep_counted = True
-        if "partial_down" not in st.session_state:
-            st.session_state.partial_down = False
+                return av.VideoFrame.from_ndarray(frame, format="bgr24")
 
-        # Streamlit UI
-        col1, col2 = st.columns(2)
-
-        with col1:
-            mode = st.radio("Select difficulty level:", ["Beginner", "Advanced"], index=0, horizontal=True)
-            run = st.checkbox("🎥 Start Camera")
-            frame_window = st.image([])
-
-        with col2:
-            st.image("https://i.imgur.com/JqYeWZn.png", caption="Proper Deadlift Form")
-            st.markdown("""
-            **Deadlift Cues**  
-            • Keep back neutral  
-            • Hinge from hips  
-            • Full extension at top  
-            • Push through heels  
-            """)
-            if st.button("🔄 Reset Counters"):
-                st.session_state.correct_reps = 0
-                st.session_state.incorrect_reps = 0
-                st.session_state.stage = "up"
-                st.session_state.rep_counted = True
-                st.session_state.partial_down = False
-                st.rerun()
-
-        st.markdown("---")
-        st.markdown("""
-        ### 🚨 Common Mistakes
-        - 🔴 Back rounding  
-        - 🔴 Incomplete range  
-        - 🔴 Knees over toes  
-        - 🔴 Not fully upright  
-        """)
-
-        # Ensure required keypoints are visible
-        REQUIRED_LANDMARKS = [
-            mp_pose.PoseLandmark.RIGHT_SHOULDER,
-            mp_pose.PoseLandmark.RIGHT_HIP,
-            mp_pose.PoseLandmark.RIGHT_KNEE,
-            mp_pose.PoseLandmark.RIGHT_ANKLE
-        ]
-
-        def all_landmarks_visible(landmarks, threshold=0.7):
-            return all(landmarks[lm.value].visibility > threshold for lm in REQUIRED_LANDMARKS)
-
-        # Frame processing
-        def process_frame(image):
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            results = pose.process(image_rgb)
-            feedback = ""
-
-            if results.pose_landmarks:
-                mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-                landmarks = results.pose_landmarks.landmark
-
-                if not all_landmarks_visible(landmarks):
-                    feedback = "⚠️ Ensure entire body is visible in the frame."
-                else:
-                    # Get joint positions
-                    hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,
-                           landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
-                    knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].x,
-                            landmarks[mp_pose.PoseLandmark.RIGHT_KNEE.value].y]
-                    ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].x,
-                             landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE.value].y]
-                    shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,
-                                landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
-
-                    knee_angle = calculate_angle(hip, knee, ankle)
-                    hip_angle = calculate_angle(shoulder, hip, knee)
-
-                    # Fully standing
-                    if hip_angle > 160 and knee_angle > 170:
-                        if st.session_state.stage == "down" and not st.session_state.rep_counted:
-                            st.session_state.correct_reps += 1
-                            feedback = "✅ Correct rep!"
-                            st.session_state.rep_counted = True
-                        elif st.session_state.partial_down and not st.session_state.rep_counted:
-                            st.session_state.incorrect_reps += 1
-                            feedback = "❌ Incomplete rep!"
-                            st.session_state.rep_counted = True
-                        else:
-                            feedback = "Stand tall and prep for rep."
-                        st.session_state.stage = "up"
-                        st.session_state.partial_down = False
-
-                    # Bottom (full depth)
-                    elif hip_angle < 80 and knee_angle < 100:
-                        feedback = "⬇️ Full range reached!"
-                        st.session_state.stage = "down"
-                        st.session_state.rep_counted = False
-                        st.session_state.partial_down = False
-
-                    # Midway (partial depth)
-                    elif 100 < hip_angle < 160 or 100 < knee_angle < 170:
-                        if st.session_state.stage == "up":
-                            st.session_state.partial_down = True
-                            st.session_state.rep_counted = False
-                        feedback = "⬇️ Go deeper!"
-                    else:
-                        feedback = "Keep moving..."
-
-            else:
-                feedback = "🔍 No user detected."
-
-            # Overlay counters and feedback
-            image = draw_text_box(image, f'CORRECT: {st.session_state.correct_reps}', (400, 50), (0, 255, 0), (255, 255, 255))
-            image = draw_text_box(image, f'INCORRECT: {st.session_state.incorrect_reps}', (400, 100), (0, 0, 255), (255, 255, 255))
-            image = draw_text_box(image, feedback, (50, 400), (0, 165, 255), (255, 255, 255))
-            return image
-
-        # Camera loop
-        if run:
-            cap = cv2.VideoCapture(0)
-            while run:
-                ret, frame = cap.read()
-                if not ret:
-                    st.error("❌ Cannot access webcam.")
-                    break
-                processed = process_frame(frame)
-                frame_window.image(processed, channels="BGR")
-            cap.release()
-
-
-
-
-
-
-
-
-
+        webrtc_streamer(
+            key="deadlift-live-stream",
+            video_processor_factory=DeadliftLiveStreamProcessor,
+            media_stream_constraints={"video": True, "audio": False},
+        )
 
     elif deadlift_option == "📤 Upload Video":
         st.subheader("Deadlift - Upload Video")
@@ -477,19 +333,6 @@ elif main_menu == "Deadlift":
 
             with open(output_path, 'rb') as f:
                 st.download_button("⬇️ Download Processed Video", f, file_name="processed_deadlift.mp4")
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 elif main_menu == "Biceps Curl":
     biceps_option = st.radio("Biceps Curl Menu", ["📡 Live Stream", "📤 Upload Video"])
